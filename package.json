@@ -1,0 +1,21 @@
+{
+  "name": "life-wallpaper",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "setup": "node index.js --setup",
+    "once": "node index.js --once"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.99"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "win32"
+  ]
+}
