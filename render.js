@@ -42,8 +42,10 @@ function render(config) {
   const tSec = Date.now() / 1000;
   const pulse = 0.5 + 0.5 * Math.sin(tSec * 0.5); // 0..1, ~12s cycle
   const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mm = String(now.getMinutes()).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  const MM = String(now.getMonth() + 1).padStart(2, '0');
+  const DD = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${yyyy}.${MM}.${DD}`;
 
   // Background radial gradient
   const bg = ctx.createRadialGradient(cx, cy, px(100), cx, cy, Math.max(W, H) * 0.7);
@@ -117,11 +119,11 @@ function render(config) {
   ctx.arc(cx, cy, Math.max(1.5, px(2.5)), 0, Math.PI * 2);
   ctx.fill();
 
-  // Live HH:MM clock inside the center disc — undeniable "it's ticking"
+  // Today's date inside the center disc — ticks once per day
   ctx.textAlign = 'center';
   ctx.fillStyle = '#d4a74c';
-  ctx.font = font(18, 'serif', 'italic');
-  ctx.fillText(`${hh}:${mm}`, cx, cy + px(26));
+  ctx.font = font(16, 'serif', 'italic');
+  ctx.fillText(todayStr, cx, cy + px(26));
 
   // Events
   for (const e of events) {
