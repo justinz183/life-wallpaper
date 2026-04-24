@@ -37,6 +37,14 @@ function render(config) {
   const life = computeLife(birthday, lifespan);
   const weeksLived = life.weeksLived;
 
+  // Use the real clock as a phase source so every rendered frame
+  // (even static snapshots 60s apart) is visibly different.
+  const tSec = Date.now() / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(tSec * 0.5); // 0..1, ~12s cycle
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+
   // Background radial gradient
   const bg = ctx.createRadialGradient(cx, cy, px(100), cx, cy, Math.max(W, H) * 0.7);
   bg.addColorStop(0, '#231710');
@@ -63,11 +71,12 @@ function render(config) {
       ctx.closePath();
 
       if (isCurrent) {
-        ctx.fillStyle = `hsla(20, 90%, 65%, 1)`;
+        // Pulse the current week so each render frame differs visibly.
+        ctx.fillStyle = `hsla(20, 90%, ${55 + pulse * 15}%, 1)`;
         ctx.fill();
         ctx.save();
         ctx.shadowColor = 'rgba(255,140,60,0.9)';
-        ctx.shadowBlur = px(28);
+        ctx.shadowBlur = px(20 + pulse * 20);
         ctx.fill();
         ctx.restore();
       } else if (lived) {
@@ -107,6 +116,12 @@ function render(config) {
   ctx.beginPath();
   ctx.arc(cx, cy, Math.max(1.5, px(2.5)), 0, Math.PI * 2);
   ctx.fill();
+
+  // Live HH:MM clock inside the center disc — undeniable "it's ticking"
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#d4a74c';
+  ctx.font = font(18, 'serif', 'italic');
+  ctx.fillText(`${hh}:${mm}`, cx, cy + px(26));
 
   // Events
   for (const e of events) {
