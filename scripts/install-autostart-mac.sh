@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Install Life Wallpaper as a LaunchAgent so it runs on login
-# Usage:  bash scripts/install-autostart-mac.sh
-# Remove: bash scripts/install-autostart-mac.sh --uninstall
+# Install Life Wallpaper as a LaunchAgent that:
+#   - runs once at every login
+#   - runs once at 00:01 every day
+# This is more reliable than a long-running Node process — launchd handles
+# sleep/wake catch-up, and using a unique filename each run defeats the
+# macOS wallpaper cache.
+#
+# Usage:   bash scripts/install-autostart-mac.sh
+# Remove:  bash scripts/install-autostart-mac.sh --uninstall
 set -euo pipefail
 
 LABEL="com.lifewallpaper.agent"
@@ -10,6 +16,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_BIN="$(command -v node || true)"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
+  launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
   launchctl unload "$PLIST" 2>/dev/null || true
   rm -f "$PLIST"
   echo "Uninstalled $PLIST"
@@ -35,14 +42,25 @@ cat > "$PLIST" <<PLISTEOF
   </array>
   <key>WorkingDirectory</key>    <string>${REPO_DIR}</string>
   <key>RunAtLoad</key>           <true/>
-  <key>KeepAlive</key>           <true/>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key>    <integer>0</integer>
+      <key>Minute</key>  <integer>1</integer>
+    </dict>
+  </array>
   <key>StandardOutPath</key>     <string>${HOME}/.life-wallpaper/stdout.log</string>
   <key>StandardErrorPath</key>   <string>${HOME}/.life-wallpaper/stderr.log</string>
 </dict>
 </plist>
 PLISTEOF
 
+# Use bootout/bootstrap (modern launchctl); fall back to load/unload.
+launchctl bootout "gui/$(id -u)/${LABEL}" 2>/dev/null || true
 launchctl unload "$PLIST" 2>/dev/null || true
-launchctl load "$PLIST"
-echo "Installed. Life Wallpaper will start on every login."
+launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST"
+
+echo "Installed. Life Wallpaper will:"
+echo "  • run once on every login"
+echo "  • run once at 00:01 every day"
 echo "To stop: bash scripts/install-autostart-mac.sh --uninstall"

@@ -9,8 +9,6 @@ const { promptText, promptChoice, notify } = require('./prompt');
 
 const DATA_DIR = path.join(os.homedir(), '.life-wallpaper');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
-const WP_A = path.join(DATA_DIR, 'wallpaper-a.png');
-const WP_B = path.join(DATA_DIR, 'wallpaper-b.png');
 
 function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -35,7 +33,7 @@ async function setupConfig() {
         : 'Invalid date. Please use YYYY-MM-DD (e.g. 1998-09-07):',
       '1998-09-07'
     );
-    if (ans === null) { // cancelled
+    if (ans === null) {
       await notify('Life Wallpaper', 'Setup cancelled. Exiting.');
       process.exit(0);
     }
@@ -54,7 +52,6 @@ async function setupConfig() {
     birthday,
     lifespan,
     lang: lang || 'en',
-    refreshSeconds: 60,
     events: [],
   };
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
@@ -67,42 +64,77 @@ function loadConfig() {
   catch { return null; }
 }
 
-let tick = 0;
-async function tickOnce(cfg, resolution) {
+function todayStamp() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function pruneOldWallpapers(keepFile) {
+  // Keep only the file we just wrote — delete every other wallpaper-*.png.
+  // macOS caches by path, so accumulating files would just bloat disk.
+  for (const name of fs.readdirSync(DATA_DIR)) {
+    if (!/^wallpaper-.*\.png$/.test(name)) continue;
+    const full = path.join(DATA_DIR, name);
+    if (full === keepFile) continue;
+    try { fs.unlinkSync(full); } catch {}
+  }
+}
+
+async function renderAndApply(cfg) {
+  const resolution = await detectResolution();
   const buf = await render({
     ...cfg,
     width: cfg.width || resolution.width,
     height: cfg.height || resolution.height,
   });
-  const target = tick++ % 2 === 0 ? WP_A : WP_B;
+  // Unique filename per render — defeats macOS wallpaper cache.
+  const target = path.join(DATA_DIR, `wallpaper-${todayStamp()}-${Date.now()}.png`);
   fs.writeFileSync(target, buf);
   await setWallpaper(target);
+  pruneOldWallpapers(target);
   const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  console.log(`[${ts}] wallpaper updated → ${target} (${cfg.width || resolution.width}×${cfg.height || resolution.height})`);
+  console.log(`[${ts}] wallpaper updated → ${path.basename(target)} (${cfg.width || resolution.width}×${cfg.height || resolution.height})`);
+}
+
+async function watchLoop(cfg, intervalSec) {
+  // Legacy long-running mode. Prefer the launchd / Task Scheduler approach
+  // (one render per day) — but keep this for users who want it.
+  await renderAndApply(cfg);
+  const ms = Math.max(5, intervalSec) * 1000;
+  setInterval(async () => {
+    try {
+      const fresh = loadConfig();
+      if (fresh) cfg = fresh;
+      await renderAndApply(cfg);
+    } catch (e) { console.error('tick failed:', e.message); }
+  }, ms);
+  console.log(`Watching. Refresh every ${ms / 1000}s. Ctrl-C to stop.`);
 }
 
 async function main() {
   ensureDir();
   const args = process.argv.slice(2);
   const wantSetup = args.includes('--setup');
-  const once = args.includes('--once');
+  const watchIdx = args.indexOf('--watch');
+  const watch = watchIdx !== -1;
+  const watchSec = watch ? (parseInt(args[watchIdx + 1], 10) || 60) : 0;
 
   let cfg = loadConfig();
   if (!cfg || wantSetup || !isValidBirthday(cfg.birthday || '')) {
     cfg = await setupConfig();
   }
 
-  const resolution = await detectResolution();
-
-  await tickOnce(cfg, resolution);
-  if (once) return;
-
-  const ms = Math.max(5, cfg.refreshSeconds || 60) * 1000;
-  setInterval(async () => {
-    try { cfg = loadConfig() || cfg; } catch {}
-    tickOnce(cfg, resolution).catch((e) => console.error('tick failed:', e.message));
-  }, ms);
-  console.log(`Running. Refresh every ${ms / 1000}s at ${resolution.width}×${resolution.height}. Ctrl-C to stop.`);
+  if (watch) {
+    await watchLoop(cfg, watchSec);
+  } else {
+    // Default: render once and exit. The OS scheduler (launchd / Task
+    // Scheduler) re-runs us on its own cadence — far more reliable than
+    // a Node-side timer that breaks across sleep/wake.
+    await renderAndApply(cfg);
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
